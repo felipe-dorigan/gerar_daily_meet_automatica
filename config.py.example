@@ -1,0 +1,14 @@
+# Configurações do Sistema
+# Copie este arquivo para config.py e ajuste as configurações
+
+# Email que será convidado para as reuniões
+EMAIL_CONVIDADO = "seu.email@gmail.com"
+
+# Token do bot Discord
+DISCORD_TOKEN = "SEU_TOKEN_DO_DISCORD_AQUI"
+
+# ID do canal Discord onde as mensagens serão enviadas
+DISCORD_CANAL_ID = 123456789
+
+# Mensagem que será enviada no Discord
+MENSAGEM = "Bom dia, @everyone \n\n Link da Daily, início às {hora} \n\n {link_meet}"

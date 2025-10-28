@@ -1,0 +1,30 @@
+# Arquivos de credenciais sensíveis
+credentials.json
+token.pickle
+config.py
+
+# Dados específicos do usuário
+link_meet.txt
+
+# Pasta do Selenium
+selenium/
+
+# Arquivos desnecessários
+gerar-link-da-daily-sem-login.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
