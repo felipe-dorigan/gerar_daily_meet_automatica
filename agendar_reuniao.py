@@ -1,8 +1,9 @@
 import datetime
 import holidays
-import asyncio
 import os
 import pickle
+import requests
+import json
 
 # Bibliotecas Google
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -11,8 +12,6 @@ from google.auth.transport.requests import Request
 
 import time
 import math
-# Bibliotecas Discord
-import discord
 
 # --- Importar configurações ---
 try:
@@ -88,69 +87,107 @@ def eh_feriado(data):
     feriados = holidays.CountryHoliday(PAIS_FERIADOS)
     return data in feriados
 
-# --- Passo 4: Enviar mensagem no Discord ---
-async def enviar_discord(token, canal_id, mensagem):
-    class ClienteDiscord(discord.Client):
-        async def on_ready(self):
-            canal = self.get_channel(canal_id)
-            if canal:
-                await canal.send(mensagem)
-            await self.close()
-
-    intents = discord.Intents.default()
-    intents.message_content = True
-    cliente = ClienteDiscord(intents=intents)
-    await cliente.start(token)
+# --- Passo 4: Enviar mensagem no Discord usando API REST ---
+def enviar_discord_rest(token, canal_id, mensagem):
+    url = f"https://discord.com/api/v10/channels/{canal_id}/messages"
+    headers = {
+        "Authorization": f"Bot {token}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "content": mensagem
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 200:
+            print("✅ Mensagem enviada com sucesso no Discord!")
+            return True
+        else:
+            print(f"❌ Erro ao enviar mensagem no Discord: {response.status_code}")
+            print(f"Resposta: {response.text}")
+            return False
+    except Exception as e:
+        print(f"❌ Erro na conexão com Discord: {e}")
+        return False
 
 # --- Passo 5: Função principal ---
-async def main():
-    service = autenticar_google()
-    agora = datetime.datetime.now()
-    
-    # --- ALTERAÇÃO PARA REUTILIZAR LINK ---
-    link_meet_file = 'link_meet.txt'
-    link_meet = None
+def main():
+    try:
+        # Verificar se é dia útil
+        agora = datetime.datetime.now()
+        if agora.weekday() >= 5:  # 5 = sábado, 6 = domingo
+            print("🏖️ Hoje é fim de semana. Daily não será agendada.")
+            return
 
-    # Tenta ler o link do arquivo
-    if os.path.exists(link_meet_file):
-        with open(link_meet_file, 'r') as f:
-            link_meet = f.read().strip()
+        # Verificar se é feriado
+        if eh_feriado(agora.date()):
+            print("🎉 Hoje é feriado. Daily não será agendada.")
+            return
 
-    # Calcula o próximo minuto múltiplo de 10
-    minutos_arredondados = math.ceil(agora.minute / 10.0) * 10
-    
-    # Define a hora da reunião proposta, zerando segundos
-    hora_reuniao = agora.replace(second=0, microsecond=0)
+        print("🚀 Iniciando processo de agendamento...")
+        
+        service = autenticar_google()
+        print("✅ Autenticação Google realizada com sucesso!")
+        
+        # --- ALTERAÇÃO PARA REUTILIZAR LINK ---
+        link_meet_file = 'link_meet.txt'
+        link_meet = None
 
-    # Se o minuto arredondado for 60, avança a hora e zera os minutos
-    if minutos_arredondados >= 60:
-        hora_reuniao = (hora_reuniao + datetime.timedelta(hours=1)).replace(minute=0)
-    else:
-        hora_reuniao = hora_reuniao.replace(minute=int(minutos_arredondados))
+        # Tenta ler o link do arquivo
+        if os.path.exists(link_meet_file):
+            with open(link_meet_file, 'r') as f:
+                link_meet = f.read().strip()
+                print(f"📎 Link existente encontrado: {link_meet}")
 
-    # Se o horário agendado for em menos de 5 minutos, adia para o próximo horário redondo (mais 10 min)
-    if (hora_reuniao - agora) < datetime.timedelta(minutes=5):
-        hora_reuniao += datetime.timedelta(minutes=10)
+        # Calcula o próximo minuto múltiplo de 10
+        minutos_arredondados = math.ceil(agora.minute / 10.0) * 10
+        
+        # Define a hora da reunião proposta, zerando segundos
+        hora_reuniao = agora.replace(second=0, microsecond=0)
 
-    data = hora_reuniao.date()
-    hora_final = hora_reuniao.time()
+        # Se o minuto arredondado for 60, avança a hora e zera os minutos
+        if minutos_arredondados >= 60:
+            hora_reuniao = (hora_reuniao + datetime.timedelta(hours=1)).replace(minute=0)
+        else:
+            hora_reuniao = hora_reuniao.replace(minute=int(minutos_arredondados))
 
-    # Gerar link e criar evento no calendário (reutilizando o link se ele existir)
-    link_meet, horario = criar_reuniao_meet(service, data, hora_final, link_existente=link_meet)
+        # Se o horário agendado for em menos de 5 minutos, adia para o próximo horário redondo (mais 10 min)
+        if (hora_reuniao - agora) < datetime.timedelta(minutes=5):
+            hora_reuniao += datetime.timedelta(minutes=10)
 
-    # Se um novo link foi criado, salva no arquivo para o futuro
-    if not os.path.exists(link_meet_file):
-        with open(link_meet_file, 'w') as f:
-            f.write(link_meet)
-    # --- FIM DA ALTERAÇÃO ---
+        data = hora_reuniao.date()
+        hora_final = hora_reuniao.time()
 
-    mensagem_discord = MENSAGEM.format(link_meet=link_meet, hora=horario.strftime("%H:%M"))
+        print(f"📅 Agendando reunião para: {data} às {hora_final}")
 
-    print(f"Link do Google Meet: {link_meet} (reunião às {horario.strftime('%H:%M')})")
+        # Gerar link e criar evento no calendário (reutilizando o link se ele existir)
+        link_meet, horario = criar_reuniao_meet(service, data, hora_final, link_existente=link_meet)
+        print("✅ Evento criado no Google Calendar!")
 
-    # Enviar mensagem no Discord
-    await enviar_discord(DISCORD_TOKEN, DISCORD_CANAL_ID, mensagem_discord)
+        # Se um novo link foi criado, salva no arquivo para o futuro
+        if not os.path.exists(link_meet_file) or not link_meet:
+            with open(link_meet_file, 'w') as f:
+                f.write(link_meet)
+            print("📝 Link salvo para reutilização futura!")
+        # --- FIM DA ALTERAÇÃO ---
+
+        mensagem_discord = MENSAGEM.format(link_meet=link_meet, hora=horario.strftime("%H:%M"))
+
+        print(f"🔗 Link do Google Meet: {link_meet}")
+        print(f"⏰ Reunião agendada para: {horario.strftime('%H:%M')}")
+
+        # Enviar mensagem no Discord
+        print("📤 Enviando mensagem para o Discord...")
+        enviar_discord_rest(DISCORD_TOKEN, DISCORD_CANAL_ID, mensagem_discord)
+        
+        print("🎉 Processo concluído com sucesso!")
+
+    except Exception as e:
+        print(f"❌ Erro durante a execução: {e}")
+        import traceback
+        traceback.print_exc()
 
 # --- Execução ---
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
